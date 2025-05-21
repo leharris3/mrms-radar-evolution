@@ -6,12 +6,13 @@ import numpy as np
 
 from tqdm import tqdm
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, List
 from torch.utils.data.dataset import Dataset
 from concurrent.futures import ThreadPoolExecutor
 
 BASEDIR = "data/MergedReflectivityComposite"
 EVENTS_DIR = "data/2024-tornado-MergedReflectivityComposite-0.5km/events"
+CACHE_DIR = "data/2024-tornado-MergedReflectivityComposite-0.5km/__cache__"
 METADATA = "data/2024-tornado-MergedReflectivityComposite-0.5km/metadata/tornados.csv"
 
 TRAIN_SPLIT = 0.85
@@ -27,10 +28,15 @@ class TornadoReflectivityDataset(Dataset):
 
         super().__init__()
         assert split in ["train", "val"], f"Invalid split: {split}"
+        self.split = split
 
         self.metadata = pd.read_csv(METADATA)
-        self.train_pairs = []
-        self.val_pairs = []
+        self.train_pairs: List[np.ndarray] = []
+        self.val_pairs: List[np.ndarray] = []
+
+        # global max/min cell vals for normalization
+        self.min_val = None
+        self.max_val = None
 
         self._load_data()
         self._get_dataset_stats()
@@ -61,70 +67,81 @@ class TornadoReflectivityDataset(Dataset):
     ):
 
         buffer = []
-        for _, row in tqdm(self.metadata.iterrows(), total=len(self.metadata)):
+        for _, row in tqdm(
+            self.metadata.iterrows(),
+            total=len(self.metadata),
+            desc="🌪️ Loading tornado events from cache:",
+        ):
 
             try:
 
                 source_fp, target_fp = self._get_tornado_data_pair(row)
-                CACHE_DIR = "/playpen/mufan/levi/tianlong-chen-lab/torp-v2/mrms-radar-evolution/data/2024-tornado-MergedReflectivityComposite-0.5km/__cache__"
                 event_name = source_fp.split("/")[3]
+
+                # if cached, load from cache
                 if Path(f"{CACHE_DIR}/{event_name}.pkl").exists():
                     with open(f"{CACHE_DIR}/{event_name}.pkl", "rb") as f:
+
                         source_arr, target_arr = pickle.load(f)
+
+                        # NOTE: clip arrays to [0, inf]
+                        source_arr = np.clip(source_arr, 0, None)
+                        target_arr = np.clip(target_arr, 0, None)
+                        
                         buffer.append([source_arr, target_arr])
-                        continue
+                else:
+                    print(f"Error: {event_name} could not be loaded from cache...")
 
-                source_data = xr.open_dataset(source_fp)
-                target_data = xr.open_dataset(target_fp)
+                # source_data = xr.open_dataset(source_fp)
+                # target_data = xr.open_dataset(target_fp)
 
-                lat_min, lat_max, lon_min, lon_max = (
-                    row.BEGIN_LAT,
-                    row.END_LAT,
-                    row.BEGIN_LON,
-                    row.END_LON,
-                )
+                # lat_min, lat_max, lon_min, lon_max = (
+                #     row.BEGIN_LAT,
+                #     row.END_LAT,
+                #     row.BEGIN_LON,
+                #     row.END_LON,
+                # )
 
-                # convert -180-180 -> 0-360
-                lon_min, lon_max = (((lon_min + 360) % 360)), (((lon_max + 360) % 360))
+                # # convert -180-180 -> 0-360
+                # lon_min, lon_max = (((lon_min + 360) % 360)), (((lon_max + 360) % 360))
 
-                # a bit hacky
-                # -> [224, 224]
-                current_gap = lat_max - lat_min
-                TARGET_GAP = 2.24
-                BUFFER = (TARGET_GAP - current_gap) / 2
+                # # a bit hacky
+                # # -> [224, 224]
+                # current_gap = lat_max - lat_min
+                # TARGET_GAP = 2.24
+                # BUFFER = (TARGET_GAP - current_gap) / 2
 
-                lat_min -= BUFFER
-                lat_max += BUFFER
-                lon_min -= BUFFER
-                lon_max += BUFFER
+                # lat_min -= BUFFER
+                # lat_max += BUFFER
+                # lon_min -= BUFFER
+                # lon_max += BUFFER
 
-                lat_mask = (source_data.latitude >= lat_min) & (
-                    source_data.latitude <= lat_max
-                )
-                lon_mask = (source_data.longitude >= lon_min) & (
-                    source_data.longitude <= lon_max
-                )
+                # lat_mask = (source_data.latitude >= lat_min) & (
+                #     source_data.latitude <= lat_max
+                # )
+                # lon_mask = (source_data.longitude >= lon_min) & (
+                #     source_data.longitude <= lon_max
+                # )
 
-                # crop -> [224, 224]
-                source_data = source_data.where(lat_mask & lon_mask, drop=True)
-                target_data = target_data.where(lat_mask & lon_mask, drop=True)
+                # # crop -> [224, 224]
+                # source_data = source_data.where(lat_mask & lon_mask, drop=True)
+                # target_data = target_data.where(lat_mask & lon_mask, drop=True)
 
-                source_arr = source_data.to_array().values.squeeze()
-                target_arr = target_data.to_array().values.squeeze()
+                # source_arr = source_data.to_array().values.squeeze()
+                # target_arr = target_data.to_array().values.squeeze()
 
-                # cache
-                with open(f"{CACHE_DIR}/{event_name}.pkl", "wb") as f:
-                    pickle.dump([source_arr, target_arr], f)
-                buffer.append([source_arr, target_arr])
+                # # cache
+                # with open(f"{CACHE_DIR}/{event_name}.pkl", "wb") as f:
+                #     pickle.dump([source_arr, target_arr], f)
+                # buffer.append([source_arr, target_arr])
+
             except:
-                print("ahhhhhhhhhhhhh!!!!~~~")
+
                 pass
 
         # assign train/val splits
         self.train_pairs = buffer[: int(len(buffer) * TRAIN_SPLIT)]
         self.val_pairs = buffer[int(len(buffer) * TRAIN_SPLIT) :]
-
-        breakpoint()
 
     def _get_dataset_stats(self):
 
