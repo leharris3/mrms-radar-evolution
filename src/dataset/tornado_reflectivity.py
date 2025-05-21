@@ -70,7 +70,7 @@ class TornadoReflectivityDataset(Dataset):
         for _, row in tqdm(
             self.metadata.iterrows(),
             total=len(self.metadata),
-            desc="🌪️ Loading tornado events from cache:",
+            desc="🌪️ Loading tornado events from cache",
         ):
 
             try:
@@ -87,56 +87,68 @@ class TornadoReflectivityDataset(Dataset):
                         # NOTE: clip arrays to [0, inf]
                         source_arr = np.clip(source_arr, 0, None)
                         target_arr = np.clip(target_arr, 0, None)
-                        
+
                         buffer.append([source_arr, target_arr])
+                        continue
                 else:
                     print(f"Error: {event_name} could not be loaded from cache...")
+                    continue
 
-                # source_data = xr.open_dataset(source_fp)
-                # target_data = xr.open_dataset(target_fp)
+                source_data = xr.open_dataset(source_fp)
+                target_data = xr.open_dataset(target_fp)
 
-                # lat_min, lat_max, lon_min, lon_max = (
-                #     row.BEGIN_LAT,
-                #     row.END_LAT,
-                #     row.BEGIN_LON,
-                #     row.END_LON,
-                # )
+                lat_min, lat_max, lon_min, lon_max = (
+                    row.BEGIN_LAT,
+                    row.END_LAT,
+                    row.BEGIN_LON,
+                    row.END_LON,
+                )
 
-                # # convert -180-180 -> 0-360
-                # lon_min, lon_max = (((lon_min + 360) % 360)), (((lon_max + 360) % 360))
+                # convert -180-180 -> 0-360
+                lon_min, lon_max = (((lon_min + 360) % 360)), (((lon_max + 360) % 360))
 
-                # # a bit hacky
-                # # -> [224, 224]
-                # current_gap = lat_max - lat_min
-                # TARGET_GAP = 2.24
-                # BUFFER = (TARGET_GAP - current_gap) / 2
+                # ----- scale to 224, 224 -----
 
-                # lat_min -= BUFFER
-                # lat_max += BUFFER
-                # lon_min -= BUFFER
-                # lon_max += BUFFER
+                # avoid some floating point errors
+                TARGET_GAP = 2.2401
+                TARGET_GAP = 0.3201
+                TARGET_GAP = 5.1201
 
-                # lat_mask = (source_data.latitude >= lat_min) & (
-                #     source_data.latitude <= lat_max
-                # )
-                # lon_mask = (source_data.longitude >= lon_min) & (
-                #     source_data.longitude <= lon_max
-                # )
+                current_gap = lat_max - lat_min
+                BUFFER = (TARGET_GAP - current_gap) / 2
+                lat_min -= BUFFER
+                lat_max += BUFFER
 
-                # # crop -> [224, 224]
-                # source_data = source_data.where(lat_mask & lon_mask, drop=True)
-                # target_data = target_data.where(lat_mask & lon_mask, drop=True)
+                current_gap = lon_max - lon_min
+                BUFFER = (TARGET_GAP - current_gap) / 2
+                lon_min -= BUFFER
+                lon_max += BUFFER
 
-                # source_arr = source_data.to_array().values.squeeze()
-                # target_arr = target_data.to_array().values.squeeze()
+                # ----------------------------
 
-                # # cache
-                # with open(f"{CACHE_DIR}/{event_name}.pkl", "wb") as f:
-                #     pickle.dump([source_arr, target_arr], f)
-                # buffer.append([source_arr, target_arr])
+                # [20, 60]
+                lat_mask = (source_data.latitude >= lat_min) & (
+                    source_data.latitude <= lat_max
+                )
 
+                # [230, 300]
+                lon_mask = (source_data.longitude >= lon_min) & (
+                    source_data.longitude <= lon_max
+                )
+
+                # crop -> [224, 224]
+                source_data = source_data.where(lat_mask & lon_mask, drop=True)
+                target_data = target_data.where(lat_mask & lon_mask, drop=True)
+
+                source_arr = source_data.to_array().values.squeeze()
+                target_arr = target_data.to_array().values.squeeze()
+
+                # cache
+                with open(f"{CACHE_DIR}/{event_name}.pkl", "wb") as f:
+                    pickle.dump([source_arr, target_arr], f)
+
+                buffer.append([source_arr, target_arr])
             except:
-
                 pass
 
         # assign train/val splits
@@ -171,8 +183,12 @@ class TornadoReflectivityDataset(Dataset):
         target_arr = torch.tensor(target_arr, dtype=torch.float32)
 
         # scale -> [0, 1]
-        source_arr = (source_arr - self.min_val) / (self.max_val - self.min_val)
-        target_arr = (target_arr - self.min_val) / (self.max_val - self.min_val)
+        source_arr = (source_arr - source_arr.min()) / (
+            source_arr.max() - source_arr.min()
+        )
+        target_arr = (target_arr - target_arr.min()) / (
+            target_arr.max() - target_arr.min()
+        )
 
         return {
             "source": source_arr,

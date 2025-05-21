@@ -1,2 +1,3 @@
 # Diffusion-Powered MRMS Radar Evolution for Tornadic Storms
 
+The Multi-Radar Multi-Sensor (MRMS) dataset provides a plethora of integrated radar and probabilistic products for forecasters and stakeholders. A natural idea is to use deep learning techniques to predict future radar states from previous ones, and to include some uncertainty quantification method as well. Diffusion-based weather-prediction models (e.g., GenCast) have proven their metal at medium-range scales. Now, there is ample opprotunity to evaluate similar techniques at fine-temporal resolutions to support nowcasting of dynamic severe weather events.
