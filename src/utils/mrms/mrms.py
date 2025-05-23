@@ -16,13 +16,14 @@
 import xarray
 import subprocess
 
+from typing import List
 from pathlib import Path
 from s3fs import S3FileSystem
 
 
-class MRMSAWSClient:
+class MRMSAWSS3Client:
     """
-    A high-level python API for the AWS MRMS S3 bucket.
+    A high-level python API for the MRMS AWS S3 bucket.
     """
 
     BASE_URL_CONUS = "s3://noaa-mrms-pds/CONUS/"
@@ -32,7 +33,10 @@ class MRMSAWSClient:
         # create an anonymous fs
         self.s3_file_system = S3FileSystem(anon=True)
 
-    def download(self, path: str, to: str, recursive=False):
+    def ls(self, path: str) -> List[str]:
+        self.s3_file_system.ls(path)
+
+    def download(self, path: str, to: str, recursive=False) -> None:
 
         assert self.s3_file_system.exists(path), f"Error! Invalid path: {path}"
         assert Path(to).is_dir(), f"Error! 'To' not a valid dir: {to}"
@@ -54,5 +58,4 @@ class MRMSAWSClient:
         else:
             print(f"✅ Download complete:\n{result.stdout}")
 
-    def get(url: str):
-        pass
+    def submit_bulk_download(self, paths: List[str], tos: List[str]): ...
