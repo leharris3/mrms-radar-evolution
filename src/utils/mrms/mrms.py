@@ -46,9 +46,32 @@ class MRMSAWSS3Client:
         assert self.s3_file_system.exists(path), f"Error! Invalid path: {path}"
         assert Path(to).is_dir(), f"Error! 'To' not a valid dir: {to}"
 
-        # TODO:
         # if  : recursive is true than path msut always be a dir
         # else: path must be a file + file name must be appended to end of "to"
+        remote_files = [path]
+        if recursive == True:
+            assert path.endswith("/"), (
+                "When recursive=True the S3 path must end with '/' so it is "
+                "interpreted as a prefix, not a single object."
+            )
+            remote_entries = self.s3_file_system.ls(path, detail=True)
+            remote_files = [e["Key"] for e in remote_entries if e["type"] == "file"]
+        else:
+            assert not path.endswith("/"), (
+                "When recursive=False the S3 path must point to a single object, "
+                "not a directory prefix."
+            )
+
+        # map remote keys to download dst paths
+        dst_root = Path(to).expanduser().resolve()
+        local_paths: List[str] = []
+        if recursive:
+            prefix_len = len(path)
+            for key in remote_files:
+                rel_key = key[prefix_len:]
+                local_paths.append(str(dst_root / rel_key))
+        else:
+            local_paths.append(str(dst_root / Path(path).name))
 
         # try to download files -> "to"
         cmd = ["aws", "s3", "cp", "--no-sign-request", path, str(to)]
@@ -60,7 +83,7 @@ class MRMSAWSS3Client:
             raise RuntimeError(
                 f"Download failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
             )
-        else:
-            print(f"✅ Download complete:\n{result.stdout}")
+
+        return local_paths
 
     def submit_bulk_download(self, paths: List[str], tos: List[str]): ...
