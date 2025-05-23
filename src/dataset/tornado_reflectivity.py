@@ -89,7 +89,11 @@ class RadarFileRetriever:
 
 class TornadoReflectivityDataset(Dataset):
     """
-    Dataset of 2024 tornado events with MRMS 0.5km reflectivity data.
+    Dataset of MRMS tornado events circa 2021-2024.
+    
+    Things to implement:
+        1. Robust interface for MRMS AWS S3 bucket.
+        2. Class for managing StormEvents data.
     """
 
     def __init__(self, split: str = "train"):
@@ -109,7 +113,7 @@ class TornadoReflectivityDataset(Dataset):
         self.max_val = None
 
         self._load_data()
-        self._get_dataset_stats()
+        # self._get_dataset_stats()
 
     def _get_tornado_data_pair(self, row) -> Tuple[str, str]:
 
@@ -139,32 +143,38 @@ class TornadoReflectivityDataset(Dataset):
         # holds all data pairs
         buffer = []
 
+        # s3 conntection
+        retriever = RadarFileRetriever()
+
         for _, row in tqdm(
             self.metadata.iterrows(),
             total=len(self.metadata),
             desc="🌪️ Loading tornado events from cache",
         ):
 
-            # HACK: ...
+            # HACK: skip a few missing rows
             try:
                 source_fp, target_fp = self._get_tornado_data_pair(row)
             except Exception as e:
                 print(f"Error: {e}")
                 continue
 
-            event_name = source_fp.split("/")[3]
+            event_name = Path(source_fp).parts[3]
 
             # 1. 15 images prior to t=0
             # 2. 3 images after t=0
 
+            # YYMMDD
             t_0_str = event_name.split("_")[0]
             t_0_str = t_0_str[0:4] + "-" + t_0_str[4:6] + "-" + t_0_str[6:8]
             t_0 = datetime.datetime.strptime(t_0_str, "%Y-%m-%d")
 
-            retriever = RadarFileRetriever()
-
             # [18]
-            radar_files = retriever.get_surrounding_files(t_0)
+            try:
+                radar_files = retriever.get_surrounding_files(t_0)
+            except RuntimeError as exc:
+                print("No radar keys for %s – %s", event_name, exc)
+                continue
 
             lat_min, lat_max, lon_min, lon_max = (
                 row.BEGIN_LAT,
@@ -201,10 +211,14 @@ class TornadoReflectivityDataset(Dataset):
 
                 # if cached, load from cache
                 if Path(cache_fp).exists():
+
                     with open(cache_fp, "rb") as f:
                         data_arr = pickle.load(f)
                         subbuffer.append(data_arr)
+
                     continue
+
+                # ---- load & cache ----
 
                 gz_path = Path(EVENTS_DIR) / event_name / fp.split("/")[-1]
                 read_path = gz_path.with_suffix("")
@@ -267,6 +281,7 @@ class TornadoReflectivityDataset(Dataset):
             return len(self.val_pairs)
 
     def __getitem__(self, idx) -> dict:
+        """ """
 
         if self.split == "train":
             source_arr, target_arr = self.train_pairs[idx]
@@ -277,13 +292,11 @@ class TornadoReflectivityDataset(Dataset):
         source_arr = torch.tensor(source_arr, dtype=torch.float32)
         target_arr = torch.tensor(target_arr, dtype=torch.float32)
 
+        # todo: should we clip to (0, inf)?
+
         # scale -> [0, 1]
-        source_arr = (source_arr - source_arr.min()) / (
-            source_arr.max() - source_arr.min()
-        )
-        target_arr = (target_arr - target_arr.min()) / (
-            target_arr.max() - target_arr.min()
-        )
+        # source_arr = (source_arr - self.min_val) / (self.max_val - self.min_val)
+        # target_arr = (target_arr - self.min_val) / (self.max_val - self.min_val)
 
         return {
             "source": source_arr,
