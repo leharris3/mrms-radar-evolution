@@ -1,5 +1,7 @@
 import gzip
 import shutil
+import xarray as xr
+
 from pathlib import Path
 
 
@@ -9,6 +11,9 @@ class Grib2File:
         self.path = Path(path)
         assert self.path.suffix == ".grib2"
 
+    def to_xarray(self, engine="cfgrib") -> xr.Dataset:
+        return xr.open_dataset(str(self.path), engine="cfgrib")
+
 
 class ZippedGrib2File:
 
@@ -16,7 +21,7 @@ class ZippedGrib2File:
         self.path = Path(path)
         assert self.path.suffix == ".gz"
 
-    def unzip(self, to_dir: str) -> str:
+    def unzip(self, to_dir: str) -> Grib2File:
         to_dir = Path(to_dir)
         assert to_dir.exists(), f"Error! Bad path: {str(to_dir)}"
         assert to_dir.is_dir(), f"Error! Invalid dir path: {str(to_dir)}"
@@ -26,4 +31,4 @@ class ZippedGrib2File:
         with gzip.open(str(self.path), "rb") as rp:
             with open(str(dst_fp), "wb") as wp:
                 shutil.copyfileobj(rp, wp)
-        return str(to_dir)
+        return Grib2File(str(dst_fp))

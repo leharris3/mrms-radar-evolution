@@ -36,7 +36,12 @@ class MRMSAWSS3Client:
     def ls(self, path: str) -> List[str]:
         self.s3_file_system.ls(path)
 
-    def download(self, path: str, to: str, recursive=False) -> None:
+    def download(self, path: str, to: str, recursive=False) -> List[str]:
+        """
+        TODO: this function should either return:
+        1. a list of raw fp strings
+        2. a list of grib2gz wrapper objects
+        """
 
         assert self.s3_file_system.exists(path), f"Error! Invalid path: {path}"
         assert Path(to).is_dir(), f"Error! 'To' not a valid dir: {to}"
