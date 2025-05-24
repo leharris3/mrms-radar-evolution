@@ -38,20 +38,11 @@ class MRMSProducts:
 
     @staticmethod
     def _fetch_products() -> List[str]:
-
-        cmd = ["aws", "s3", "ls", MRMSURLs.BASE_URL_CONUS, "--no-sign-request"]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Download failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
-            )
-
+        s3_file_system = S3FileSystem(anon=True)
+        results = s3_file_system.ls(MRMSURLs.BASE_URL_CONUS)
         products = []
-        # brittle but it works lol
-        for res in result.stdout.split("\n")[:-1]:
-            res_cleaned = res.strip().replace("PRE ", "")[:-1]
-            products.append(res_cleaned)
-
+        for res in results:
+            products.append(res.split('/')[-1])
         return products
 
 
@@ -66,7 +57,7 @@ class MRMSAWSS3Client:
         self.s3_file_system = S3FileSystem(anon=True)
 
     def ls(self, path: str) -> List[str]:
-        self.s3_file_system.ls(path)
+        return self.s3_file_system.ls(path)
 
     def download(self, path: str, to: str, recursive=False) -> List[str]:
         """
@@ -123,3 +114,6 @@ class MRMSAWSS3Client:
 
 if __name__ == "__main__":
     prod = MRMSProducts()
+    client = MRMSAWSS3Client()
+    res = client.ls(MRMSURLs.BASE_URL_CONUS)
+    breakpoint()
