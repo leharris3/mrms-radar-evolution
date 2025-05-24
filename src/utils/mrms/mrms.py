@@ -16,17 +16,49 @@
 import xarray
 import subprocess
 
+from enum import Enum
 from typing import List
 from pathlib import Path
 from s3fs import S3FileSystem
 
 
-class MRMSAWSS3Client:
+class MRMSURLs:
+
+    BASE_URL = "s3://noaa-mrms-pds/"
+    BASE_URL_CONUS = "s3://noaa-mrms-pds/CONUS/"
+
+
+class MRMSProducts:
     """
-    A high-level python API for the MRMS AWS S3 bucket.
+    An enumeration of all available MRMS CONUS products at a given moment.
     """
 
-    BASE_URL_CONUS = "s3://noaa-mrms-pds/CONUS/"
+    def __init__(self):
+        self.products = MRMSProducts._fetch_products()
+
+    @staticmethod
+    def _fetch_products() -> List[str]:
+
+        cmd = ["aws", "s3", "ls", MRMSURLs.BASE_URL_CONUS, "--no-sign-request"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Download failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            )
+
+        products = []
+        # brittle but it works lol
+        for res in result.stdout.split("\n")[:-1]:
+            res_cleaned = res.strip().replace("PRE ", "")[:-1]
+            products.append(res_cleaned)
+
+        return products
+
+
+class MRMSAWSS3Client:
+    """
+    A high-level python API for the public MRMS AWS S3 bucket.
+    """
 
     def __init__(self, format="NCEP"):
 
@@ -87,3 +119,7 @@ class MRMSAWSS3Client:
         return local_paths
 
     def submit_bulk_download(self, paths: List[str], tos: List[str]): ...
+
+
+if __name__ == "__main__":
+    prod = MRMSProducts()
