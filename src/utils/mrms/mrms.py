@@ -61,13 +61,13 @@ class MRMSAWSS3Client:
 
     def download(self, path: str, to: str, recursive=False) -> List[str]:
         """
-        TODO: this function should either return:
-        1. a list of raw fp strings
-        2. a list of grib2gz wrapper objects
+        Returns
+        ---
+        - A list of `str` paths corresponding to successfully downloaded files.
         """
 
         assert self.s3_file_system.exists(path), f"Error! Invalid path: {path}"
-        assert Path(to).is_dir(), f"Error! 'To' not a valid dir: {to}"
+        # assert Path(to).is_dir(), f"Error! 'To' not a valid dir: {to}"
 
         # if  : recursive is true than path msut always be a dir
         # else: path must be a file + file name must be appended to end of "to"
@@ -97,7 +97,7 @@ class MRMSAWSS3Client:
             local_paths.append(str(dst_root / Path(path).name))
 
         # try to download files -> "to"
-        cmd = ["aws", "s3", "cp", "--no-sign-request", path, str(to)]
+        cmd = ["aws", "s3", "cp", path, str(to), "--no-sign-request"]
         if recursive:
             cmd.append("--recursive")
 
