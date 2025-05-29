@@ -65,7 +65,7 @@ class TornadoMRMSDataset(Dataset):
         self._load_data_from_cache()
         self._get_dataset_stats()
 
-    def _build_datset(self): pass
+    def _build_dataset(self): pass
 
     def _load_data_from_cache(self):
 
@@ -106,31 +106,29 @@ class TornadoMRMSDataset(Dataset):
 
     def __len__(self) -> int:
         if self.split == "train":
-            return len(self.train_pairs)
+            return len(self.train_data)
         else:
-            return len(self.val_pairs)
+            return len(self.val_data)
 
     def __getitem__(self, idx) -> dict:
-        """ """
+        """
+        - [6, 224, 224]
+        - Normalized -> [0, 1]
+        """
 
         if self.split == "train":
-            source_arr, target_arr = self.train_pairs[idx]
+            item: np.ndarray = self.train_data[idx]
         else:
-            source_arr, target_arr = self.val_pairs[idx]
+            item: np.ndarray = self.val_data[idx]
 
-        # convert to tensors
-        source_arr = torch.tensor(source_arr, dtype=torch.float32)
-        target_arr = torch.tensor(target_arr, dtype=torch.float32)
-
-        # todo: should we clip to (0, inf)?
+        # clip to (0, inf)?
+        item = item.clip(0)
 
         # scale -> [0, 1]
-        # source_arr = (source_arr - self.min_val) / (self.max_val - self.min_val)
-        # target_arr = (target_arr - self.min_val) / (self.max_val - self.min_val)
+        item = item / self.max_val
 
         return {
-            "source": source_arr,
-            "target": target_arr,
+            "item": item,
         }
 
 
