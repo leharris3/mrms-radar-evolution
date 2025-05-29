@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import sys
-from aiohttp import ConnectionTimeoutError
 import torch
 import pickle
 import gzip
@@ -11,6 +10,7 @@ import pandas as pd
 import xarray as xr
 import numpy as np
 
+from glob import glob
 from bisect import bisect_left
 from collections import defaultdict
 from tqdm import tqdm
@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from src.utils.mrms.mrms import MRMSAWSS3Client, MRMSURLs
 from src.utils.mrms.files import ZippedGrib2File, Grib2File
 
-EVENTS_DIR = "data/2022-2024-tornado-MRMSm/events"
+
 CACHE_DIR = "data/2022-2024-tornado-MRMS/__cache__"
 METADATA = "data/2022-2024-tornado-MRMS/metadata/tornados.csv"
 
@@ -36,6 +36,9 @@ class TornadoMRMSDataset(Dataset):
     """
     Dataset of MRMS tornado events circa 2022-2024.
     """
+
+    _EVENTS_DIR = "data/2022-2024-tornado-MRMS/events"
+    _ALL_DATA_CACHE_FP = "data/2022-2024-tornado-MRMS/__cache__/__all_data__/all_data.pkl"
 
     __products__ = ["MergedBaseReflectivity_00.50"]
 
@@ -58,7 +61,7 @@ class TornadoMRMSDataset(Dataset):
         if build_dataset == True:
             self._build_dataset()
 
-        # self._get_dataset_stats()
+        self._load_data_from_cache()
 
     def _get_tornado_data_pair(self, row) -> Tuple[str, str]:
 
@@ -242,17 +245,51 @@ class TornadoMRMSDataset(Dataset):
 
             for fp in files:
 
-                gf = Grib2File(fp)
-                xr = gf.to_xarray()
-                cropped_arr = crop_xarray_to_224_224(row, xr)
-                out_fp = fp.replace(".grib2", "_cropped_224.pkl")
+                try:
 
-                with open(out_fp, "wb") as f:
-                    pickle.dump(cropped_arr, f)
+                    out_fp = fp.replace(".grib2", "_cropped_224.pkl")
+
+                    # skip existing files
+                    if Path(out_fp).is_file(): continue
+
+                    gf = Grib2File(fp)
+                    xr = gf.to_xarray()
+                    cropped_arr = crop_xarray_to_224_224(row, xr)
+
+                    with open(out_fp, "wb") as f:
+                        pickle.dump(cropped_arr, f)
+
+                except:
+
+                    print(f"Error: could not process {fp}")
 
         # for dir in dirs
             # 1. list all files in sorted order
             # 2.
+
+    def _load_data_from_cache(self):
+
+        # [[event]]
+        all_data = {}
+        with open(TornadoMRMSDataset, 'rb') as f:
+            all_data = pickle.load(f)
+
+        # events_dirs = glob(TornadoMRMSDataset.EVENTS_DIR + "/*")
+        # for dir_path in tqdm(events_dirs):
+        #     event_data = []
+        #     cache_files = glob(dir_path + "/*.pkl")
+        #     for fp in cache_files:
+        #         with open(fp, 'rb') as f:
+        #             data = pickle.load(f)
+        #         event_data.append(data)
+        #     event_name = Path(dir_path).parts[-1]
+        #     all_data[event_name] = event_data
+        
+        # fp = "/playpen/mufan/levi/tianlong-chen-lab/torp-v2/mrms-radar-evolution/data/2022-2024-tornado-MRMS/__cache__/__all_data__/all_data.pkl"
+        # with open(fp, 'wb') as f: pickle.dump(all_data, f)
+        
+        breakpoint()
+            
 
     def _get_dataset_stats(self):
 
@@ -295,6 +332,6 @@ class TornadoMRMSDataset(Dataset):
 
 
 if __name__ == "__main__":
-    dataset = TornadoMRMSDataset(split="train", build_dataset=True)
+    dataset = TornadoMRMSDataset(split="train")
     print(len(dataset))
     print(dataset[0])
