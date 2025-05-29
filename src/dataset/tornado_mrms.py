@@ -38,7 +38,7 @@ class TornadoMRMSDataset(Dataset):
     """
 
     _EVENTS_DIR = "data/2022-2024-tornado-MRMS/events"
-    _ALL_DATA_CACHE_FP = "data/2022-2024-tornado-MRMS/__cache__/__all_data__/all_data.pkl"
+    _ALL_DATA_CACHE_FP = "data/2022-2024-tornado-MRMS/__cache__/__all_data__/all_data.h5"
 
     __products__ = ["MergedBaseReflectivity_00.50"]
 
@@ -50,18 +50,20 @@ class TornadoMRMSDataset(Dataset):
 
         self.metadata = pd.read_csv(METADATA)
 
-        # [[15x source, 3x target]] data pairs
-        self.train_pairs: List[np.ndarray] = []
-        self.val_pairs: List[np.ndarray] = []
+        # [[6, 224, 224]]
+        self.train_data: List[np.ndarray] = []
+        self.val_data: List[np.ndarray] = []
 
         # global max/min cell vals for normalization
-        self.min_val = None
+        # NOTE: we clip all samples [0, inf)
+        self.min_val = 0
         self.max_val = None
 
         if build_dataset == True:
             self._build_dataset()
 
         self._load_data_from_cache()
+        self._get_dataset_stats()
 
     def _get_tornado_data_pair(self, row) -> Tuple[str, str]:
 
@@ -269,37 +271,40 @@ class TornadoMRMSDataset(Dataset):
 
     def _load_data_from_cache(self):
 
+        import h5py
+
         # [[event]]
         all_data = {}
-        with open(TornadoMRMSDataset, 'rb') as f:
-            all_data = pickle.load(f)
+        with h5py.File(TornadoMRMSDataset._ALL_DATA_CACHE_FP, "r") as hf:
+            for key in tqdm(hf.keys(), desc="🚀 Loading Dataset From Cache"):
+                all_data[key] = hf[key][:]
 
-        # events_dirs = glob(TornadoMRMSDataset.EVENTS_DIR + "/*")
-        # for dir_path in tqdm(events_dirs):
-        #     event_data = []
-        #     cache_files = glob(dir_path + "/*.pkl")
-        #     for fp in cache_files:
-        #         with open(fp, 'rb') as f:
-        #             data = pickle.load(f)
-        #         event_data.append(data)
-        #     event_name = Path(dir_path).parts[-1]
-        #     all_data[event_name] = event_data
-        
-        # fp = "/playpen/mufan/levi/tianlong-chen-lab/torp-v2/mrms-radar-evolution/data/2022-2024-tornado-MRMS/__cache__/__all_data__/all_data.pkl"
-        # with open(fp, 'wb') as f: pickle.dump(all_data, f)
-        
-        breakpoint()
-            
+        # NOTE: train/val splits are currently deterministic
+        # it may be nice to add optional, random splits in the future
+        all_keys = list(sorted(all_data.keys()))
+
+        split_idx = int(0.85 * len(all_keys))
+        train_keys = all_keys[:split_idx]
+        val_keys = all_keys[split_idx:]
+
+        # assign train/val sets
+        self.train_data = [all_data[k] for k in train_keys]
+        self.val_data   = [all_data[k] for k in val_keys]
 
     def _get_dataset_stats(self):
 
         # calculate minimum and maximum values
-        self.min_val = float("inf")
         self.max_val = float("-inf")
-
-        for source_arr, target_arr in tqdm(self.train_pairs):
-            self.min_val = min(self.min_val, source_arr.min())
-            self.max_val = max(self.max_val, source_arr.max())
+        data = self.train_data if self.split == "train" else self.val_data
+        for idx, arr in enumerate(data):
+            try:
+                self.max_val = max(self.max_val, float(arr.max()))
+            except:
+                # remove some erroneous entries
+                if self.split == "train":
+                    self.train_data.pop(idx)
+                else:
+                    self.val_data.pop(idx)
 
     def __len__(self) -> int:
         if self.split == "train":
